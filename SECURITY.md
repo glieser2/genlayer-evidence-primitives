@@ -1,4 +1,4 @@
-# v3 security review
+# v3 / v3.1 candidate security review
 
 ## Repairs and adversarial evidence
 
@@ -10,6 +10,8 @@
 | Full body rescues an insufficient leader quote | Citation-only first stage; independent context veto second stage | test_citation_isolation |
 | Service outages consume all attempts; permanent failure cannot finish | Independently agreed structured gate failures; transient no-consumption; rejected finalization; cancellation | test_rubric_http_failure_recovery; test_source_outage_does_not_exhaust_and_cancel |
 | Semicolon and empty delimiters accepted; committed duplicates make quorum impossible | Reject raw ;?#; require enough distinct hashes | test_source_url_policy; test_source_duplicate_content |
+| Full-document leader decision and stricter single-quote validator can leave no acceptable candidate when evidence is spread over more than 500 characters | Shared leader/UNCLEAR evidence rule; every subcondition must fit one actual 10..500-character quote; otherwise UNCLEAR | test_single_quote_evidence_protocol (short and separated evidence, both contracts) |
+| Invalid UTF-8 criterion artifact raises outside the permanent-failure gate | Decode criteria bytes inside the shared gate; independently agreed REJECTED/INVALID_UTF8 can finalize | test_rubric_invalid_utf8_is_reviewable |
 
 Original fabricated quotes, bad offsets, forged hashes/identities, stale reports and CI substitutions remain covered by positive controls followed by tampered-candidate rejection.
 
@@ -20,5 +22,7 @@ Untrusted inputs include worker submissions, leader proposals, document prose an
 The policy is deliberately narrow: complete trees are limited to 200 entries and 300 KB, files to 64 KB, and criteria to four. Only exact inert documentation paths may vary outside pins. GitHub run/job checks accept push or manual execution; full commit/attempt binding and policy hashes must agree. A finite suite does not prove arbitrary functionality, and hosted CI/transitive package supply chains remain external dependencies.
 
 Two-stage citation prompts prevent full-source leakage into the sufficiency stage. They do not mathematically prove semantic sufficiency, factual truth, or resistance to every prompt injection. Label-only verifier schema intentionally rejects extra model fields. Real models can still disagree or emit invalid output, causing an evaluation to fail without approval. These contracts hold no funds and are unsuitable for unattended high-stakes decisions.
+
+The v3.1 changes address two bounded reliability findings; no new authorization or CI-integrity bypass was identified in this review. Its quote-protocol regression uses a deterministic semantic oracle that computes whether both facts fit within the quote bound, and exercises the actual leader/validator prompts and SDK transitions. It does not prove that live models will follow that protocol. An old v3 live rubric attempt ended with ConsensusUndetermined and model schema/quotation errors; a successful leader candidate also quoted only the revision/digest condition for a criterion requiring owner authorization. That evidence supports requiring complete subconditions, but does not establish that the synthetic separated-evidence case caused the live failure. Existing v3 live evidence remains historical for the new source hashes.
 
 SourceQuorum's registry expresses publisher diversity, not independently audited editorial control. Only identical bytes are deduplicated. Owners must inspect missing coverage and choose useful claims. Permanent rubric failures produce a report which the client can finalize as rejected or explicitly supersede. Transient failures revert without counters changing; operational details remain in transaction records rather than on-chain history.
