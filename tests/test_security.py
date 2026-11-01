@@ -285,3 +285,26 @@ def test_independent_model_dissent(direct_vm, direct_deploy, direct_alice, direc
         c.evaluate()
         rubric_mocks(direct_vm, label='UNCLEAR')
     assert direct_vm.run_validator() is False
+
+
+@pytest.mark.parametrize('target', ['source', 'rubric'])
+def test_json_response_mode(direct_vm, direct_deploy, direct_alice, direct_bob, monkeypatch, target):
+    if target == 'source':
+        source_mocks(direct_vm)
+        c = new_source(direct_deploy)
+    else:
+        rubric_mocks(direct_vm)
+        c = new_rubric(direct_vm, direct_deploy, direct_alice, direct_bob)
+    from genlayer import gl
+    original = gl.nondet.exec_prompt
+    calls = []
+
+    def require_json(prompt, **config):
+        assert config.get('response_format') == 'json', 'Use SDK JSON mode, not only a prompt instruction'
+        calls.append(config)
+        return original(prompt, **config)
+
+    monkeypatch.setattr(gl.nondet, 'exec_prompt', require_json)
+    c.evaluate()
+    assert direct_vm.run_validator() is True
+    assert len(calls) >= 2, 'Leader and validator both request structured output'
