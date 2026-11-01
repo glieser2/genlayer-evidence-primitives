@@ -1,28 +1,24 @@
-# Security review and residual assumptions
+# v3 security review
 
-## Repair matrix
+## Repairs and adversarial evidence
 
-| v1 issue | v2 control | Reproduction |
+| Reproduced v2 defect | v3 control | Regression |
 | --- | --- | --- |
-| Leader can store fabricated citation | Exact schema, source/artifact hash, quote range and independent citation assessment | `test_source_candidate_attack`, `test_rubric_candidate_attack` |
-| Anyone can permanently finish a claim | Owner-only evaluate/finalize | `test_source_retry_and_stale_finalization` |
-| Inconclusive result cannot retry | NEEDS_EVIDENCE -> new review; no automatic finalization | Both lifecycle tests |
-| Old review can authorize changed work | Revision plus canonical report digest required | Both lifecycle tests |
-| Arbitrary hosts and misleading independence | Fixed publisher registry + immutable commit URLs + exact-copy de-duplication | URL, duplicate publisher/content tests |
-| Single dead source blocks all progress | Unavailable evidence recorded; remaining distinct-source quorum possible | `test_source_availability_quorum` |
-| Worker self-report treated as delivery | Actual GitHub run and job records + pinned commit and acceptance-policy hashes | `test_rubric_ci_gate` |
-| Fake/weak success assertions | Positive control plus forged-candidate rejection; exact UserError identity/message on failed construction | Entire suite |
+| Unpinned subprocess/import/config hijack can fabricate CI output | Python -I; explicit isolated pytest configuration/plugin; pinned full executable policy; complete Git tree gate | test_real_python_import_and_pytest_isolation; test_repository_tree_gate |
+| Worker overwrites rejected review or exhausts revisions unilaterally | Client authorizes every revision; locked REVIEW; client cancellation at limits; retained history | test_client_controls_revisions_and_terminal_exit |
+| Validator rejects matching semantics due to redundant generated quote | Exact label-only schema for validator | test_citation_isolation[label_only-*] |
+| Full body rescues an insufficient leader quote | Citation-only first stage; independent context veto second stage | test_citation_isolation |
+| Service outages consume all attempts; permanent failure cannot finish | Independently agreed structured gate failures; transient no-consumption; rejected finalization; cancellation | test_rubric_http_failure_recovery; test_source_outage_does_not_exhaust_and_cancel |
+| Semicolon and empty delimiters accepted; committed duplicates make quorum impossible | Reject raw ;?#; require enough distinct hashes | test_source_url_policy; test_source_duplicate_content |
 
-## Trust boundaries
+Original fabricated quotes, bad offsets, forged hashes/identities, stale reports and CI substitutions remain covered by positive controls followed by tampered-candidate rejection.
 
-Untrusted: worker input, leader proposal, retrieved prose, LLM output. Trusted within this experiment: GenLayer execution/consensus, SDK serialization, HTTPS retrieval infrastructure, GitHub service metadata, the client-reviewed acceptance policy and curated publisher registry. Owner/client authorization is intentional governance, not decentralization of final acceptance.
+## Trust and limitations
 
-Schema checks cannot establish source truth. An exact quote can be misleading; independent model assessment reduces but does not eliminate interpretation errors. Same-body hashing rejects byte-identical mirrors only. Publisher groups are a maintained policy, not automatically discovered ownership. Public repository ownership can change. Both contracts remain unsuitable for unattended high-stakes or financial decisions.
+Untrusted inputs include worker submissions, leader proposals, document prose and model output. Trusted assumptions include GenLayer execution/consensus and retrieval infrastructure, public GitHub metadata/TLS, the maintained publisher registry and the client-reviewed pinned policy. The client intentionally governs final acceptance. Full executable pinning prevents unnoticed additions/changes; it does not prove that originally reviewed code is benign. Direct Mode executes code and is not a hostile-code sandbox.
 
-GitHub CI gates prove the selected run succeeded according to GitHub and the fixed tested policy. They do not prove arbitrary requirements not encoded in tests/criteria. Hosted runner state and transitive dependencies can change. A malicious contract implementation could target known tests; the fixed tests are evidence, not a full formal verification.
+The policy is deliberately narrow: complete trees are limited to 200 entries and 300 KB, files to 64 KB, and criteria to four. Only exact inert documentation paths may vary outside pins. GitHub run/job checks accept push or manual execution; full commit/attempt binding and policy hashes must agree. A finite suite does not prove arbitrary functionality, and hosted CI/transitive package supply chains remain external dependencies.
 
-Failed web calls, hash mismatches, malformed output or validator disagreement fail closed with respect to acceptance. SourceQuorum may still reach a declared quorum with unavailable sources; reviewers must examine coverage. Rubric CI gate failures revert and allow retry. Before finalization the authorized actor can re-evaluate; after finalization a correction needs a new deployment. No funds are locked, refunded, minted or transferred.
+Two-stage citation prompts prevent full-source leakage into the sufficiency stage. They do not mathematically prove semantic sufficiency, factual truth, or resistance to every prompt injection. Label-only verifier schema intentionally rejects extra model fields. Real models can still disagree or emit invalid output, causing an evaluation to fail without approval. These contracts hold no funds and are unsuitable for unattended high-stakes decisions.
 
-## Reproducibility boundaries
-
-Direct Mode uses the genuine SDK storage and serialization layer, mocked web/model responses and explicit validator callbacks. It bypasses WASM execution and is not a consensus test. Real Studio deployments and explorer receipts are a separate required check. The runner uses isolated subprocesses because this SDK version keeps contract registration globally. The Windows workaround changes only cleanup of a temporary stdin file.
+SourceQuorum's registry expresses publisher diversity, not independently audited editorial control. Only identical bytes are deduplicated. Owners must inspect missing coverage and choose useful claims. Permanent rubric failures produce a report which the client can finalize as rejected or explicitly supersede. Transient failures revert without counters changing; operational details remain in transaction records rather than on-chain history.
