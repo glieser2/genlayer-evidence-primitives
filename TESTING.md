@@ -1,12 +1,30 @@
-# Verification record
+# Verification record for v2
 
-Date: 2026-11-01. Environment: Windows, Python 3.13.5, genlayer-test 0.29.2, genvm-linter 0.11.0, SDK from official GenVM v0.2.12 archive. The tests use mocked web and model responses. They are not proof of real validators or source truth.
+Date: 2026-11-01. This document describes the local v2 release candidate only. Public v1 addresses and transactions do **not** verify v2.
 
-- `genvm-lint check contracts/source_quorum.py`: lint and schema validation passed.
-- `genvm-lint check contracts/rubric_milestone.py`: lint and schema validation passed.
-- Each test in `tests/test_contracts.py` was run individually; four passed. One-process suite is not yet supported with this version: SDK retains a global contract registration across contract classes. Each passing test was a separate process.
-- Windows workaround applied locally to the installed test package: skip unlinking a temporary stdin file while it remains open; the package otherwise raises WinError 32. This changes test harness cleanup, not the contract. The workaround is not upstream and is not needed in a Linux environment if that environment permits unlinking open files.
-- Studio SourceQuorum deployment: https://explorer-studio.genlayer.com/tx/0x7d19510cd3b1209725b91fa12f2c8aeba2930ed30be45a277baf83d8c6c6a128 . Contract: https://explorer-studio.genlayer.com/address/0x2F24d145B61E234114daDb74ae77553b25413795 .
-- Studio evaluation transaction: https://explorer-studio.genlayer.com/tx/0xe2b07f5d34ac68bb6810b08edff801a0a4602c8181e021349875a87a75825edf reached ACCEPTED. At the Accepted state, `result` reported `SUPPORTED` for "Python is a programming language." with two SUPPORTS labels and quotes from python.org and Wikipedia. The observed result is a demonstration, not proof of source independence or truth in other cases.
-- Studio RubricMilestone: https://explorer-studio.genlayer.com/address/0x44306Fc44C913DF45C577EA615B874e817b7C0Ae . Deployment https://explorer-studio.genlayer.com/tx/0x00860812f905db07688d1d3b572c550ad2e1f45bdfd7e3a95487a9b333d0d569 . Worker submission https://explorer-studio.genlayer.com/tx/0x2c39deaba6cd6e7e8729095b0ab1547df6fa28725ca2c487e2f097b519a65ddd . Evaluation https://explorer-studio.genlayer.com/tx/0x7ebb350b77565ee2ce19f916514d216643a96489a7085d0651a14c7c4d4ce2e8 reached ACCEPTED. `result` returned APPROVED and two MET labels for the supplied sample text. This shows assessment of the text, not proof that any real tests passed or software exists.
-- Earlier deployment https://explorer-studio.genlayer.com/tx/0x19f03dbc3cf36079e6c56c47a395c6a631f9aab182ba944155bbc1618994501d reached consensus on an ERROR: Studio passed an integer to an Address constructor input. The published code changes the input to a string and constructs Address explicitly; the corrected deployment above succeeded. An ACCEPTED transaction alone is not necessarily successful execution.
+## Local verification
+
+- SDK: official GenVM v0.2.12, genlayer-test 0.29.2, genvm-linter 0.11.0; Python 3.13.5 on Windows.
+- `python scripts/run_tests.py`: 62 isolated SDK Direct Mode cases. See `evidence/local-tests.json` for exact counts, timestamps, source SHA-256 values and every subprocess output.
+- `python scripts/check_contracts.py`: both contracts pass the linter and ABI validation; see `evidence/lint.txt`.
+- Models and network responses are mocked in these tests. Each forged-leader test first verifies that an honest candidate is accepted, then requires rejection of a tampered candidate.
+- The first-generation fabricated-citation vulnerability is covered for both contracts. Coverage also includes malformed candidate schemas, altered hashes/paths/publishers, quote offsets, stale revisions, private/forged/unpinned source URLs, duplicate publishers/content, unavailable-source quorum, changed documents, authority boundaries, retry, finalization, foreign/fork CI runs, wrong commits/workflows/events, incomplete or failed jobs, skipped test steps, weakened pinned tests and independent validator dissent.
+- Constructor rejection tests check both the expected message and exact SDK UserError type, preventing dependency/setup exceptions from counting as a pass.
+- The installed test framework has been restored to its original cleanup logic. The repository's in-memory Windows shim is used for reproduction; no manual dependency edit is required. Linux requires no shim.
+
+## Pending external verification
+
+Browser access has been restored and this v2 release is being published. GitHub Actions and fresh Studio deployments are the next gates; no v2 live success is claimed until actual receipts are recorded below. Portal submissions remain paused.
+
+After browser access is restored:
+
+1. Publish the exact release contents to `glieser2/genlayer-evidence-primitives`, replacing obsolete v1 tests and documenting that v1 deployments are superseded.
+2. Wait for the `verify` job to finish successfully. Save its exact commit, run ID, run attempt, job ID and logs. If anything fails, fix and rerun; do not pin a failing run.
+3. Build `policy_json` from the exact files at the successfully tested commit, including `scripts/check_contracts.py`. Local policy hashes are prepared in `evidence/deployment-inputs.json`.
+4. Deploy SourceQuorum with the fixed source manifest, evaluate, inspect the complete quote/hash report, exercise re-evaluation and a stale-finalize rejection, then finalize the current review. Verify execution SUCCESS and FINALIZED consensus in the Studio explorer.
+5. Deploy RubricMilestone with distinct client/worker accounts, actual repository, criteria and pinned policy. Submit the successful commit/run as the worker; evaluate as the client; inspect CI identity, artifact hashes and quotes. Exercise unauthorized and stale-review failures, then finalize the current review. Verify explorer receipts.
+6. Record new addresses, transactions, inputs and final states in this file and the Chinese audit document. Reassess submission readiness. CAPTCHA and final Portal submission remain with the user.
+
+## Superseded v1 evidence
+
+The earlier SourceQuorum `0x2F24d145B61E234114daDb74ae77553b25413795` and RubricMilestone `0x44306Fc44C913DF45C577EA615B874e817b7C0Ae` demonstrated basic Studio execution. They have the audit defects fixed in the local v2 code. Do not use their finalized transactions as evidence for the new implementation.
