@@ -1,9 +1,11 @@
 """Run the official linter against exactly the SDK used by the tests."""
+import sys
+if not sys.flags.isolated:
+    raise SystemExit('Run with python -I scripts/check_contracts.py')
 import os
 from pathlib import Path
 import shutil
 import subprocess
-import sys
 import tempfile
 import gltest.direct.sdk_loader as loader
 
@@ -21,7 +23,7 @@ with tempfile.TemporaryDirectory(prefix='genlayer-lint-') as directory:
     env = dict(os.environ, GENVMROOT=directory, PYTHONIOENCODING='utf-8')
     logs, failures = [], 0
     for name in ('source_quorum.py', 'rubric_milestone.py'):
-        run = subprocess.run([sys.executable, '-c', 'from genvm_linter.cli import cli; cli()', 'check', 'contracts/' + name],
+        run = subprocess.run([sys.executable, '-I', '-X', 'utf8', '-c', 'from genvm_linter.cli import cli; cli()', 'check', 'contracts/' + name],
                              capture_output=True, text=True, encoding='utf-8', env=env)
         logs.append(name + '\n' + run.stdout + run.stderr)
         failures += run.returncode != 0

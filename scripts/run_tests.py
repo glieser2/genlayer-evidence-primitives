@@ -1,4 +1,7 @@
 """Run each SDK test in a fresh process; exit nonzero on collection or test failure."""
+import sys
+if not sys.flags.isolated:
+    raise SystemExit('Run with python -I scripts/run_tests.py')
 import argparse
 import datetime
 import hashlib
@@ -6,15 +9,18 @@ import json
 import os
 from pathlib import Path
 import subprocess
-import sys
 
 root = Path(__file__).resolve().parents[1]
 os.chdir(root)
 parser = argparse.ArgumentParser()
 parser.add_argument('--output', default='evidence/local-tests.json')
 args = parser.parse_args()
-env = dict(os.environ, PYTHONIOENCODING='utf-8')
-collected = subprocess.run([sys.executable, '-m', 'pytest', '--collect-only', '-q', 'tests/test_security.py'],
+env = {k: v for k, v in os.environ.items() if not k.startswith(('PYTHON', 'PYTEST'))}
+env['PYTEST_DISABLE_PLUGIN_AUTOLOAD'] = '1'
+command = [sys.executable, '-I', '-X', 'utf8', '-m', 'pytest', '-c', str(root / 'pytest.ini'),
+           '--confcutdir=' + str(root / 'tests'), '--import-mode=importlib',
+           '-p', 'gltest.direct.pytest_plugin']
+collected = subprocess.run(command + ['--collect-only', '-q', 'tests/test_security.py'],
                            text=True, encoding='utf-8', capture_output=True, env=env)
 if collected.returncode:
     print(collected.stdout, collected.stderr)
@@ -25,7 +31,7 @@ if not nodes or len(nodes) != len(set(nodes)):
 results = []
 started = datetime.datetime.now(datetime.timezone.utc).isoformat()
 for node in nodes:
-    run = subprocess.run([sys.executable, '-m', 'pytest', '-q', '-s', node], capture_output=True,
+    run = subprocess.run(command + ['-q', '-s', node], capture_output=True,
                          text=True, encoding='utf-8', env=env)
     print(('PASS ' if run.returncode == 0 else 'FAIL ') + node, flush=True)
     if run.returncode:
