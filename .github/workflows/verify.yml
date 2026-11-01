@@ -16,11 +16,11 @@ jobs:
         with:
           python-version: '3.13'
       - name: Install pinned test dependencies
-        run: python -m pip install -r requirements-test.txt
+        run: python -I -m pip install -r requirements-test.txt
       - name: Adversarial tests
-        run: python scripts/run_tests.py --output evidence/ci-tests.json
+        run: python -I scripts/run_tests.py --output evidence/ci-tests.json
       - name: GenVM lint and ABI validation
-        run: python scripts/check_contracts.py
+        run: python -I scripts/check_contracts.py
       - name: Preserve verification records
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
