@@ -26,7 +26,7 @@ def classify(criterion: str, body: str, citation: str = '') -> dict:
               'Return JSON only: {"label":"MET|NOT_MET|UNCLEAR","quote":"exact 10..500 character substring"}. '
               'Use UNCLEAR for insufficient evidence.\n' +
               json.dumps({'criterion': criterion, 'artifact': body, 'citation': citation}))
-    raw = gl.nondet.exec_prompt(prompt)
+    raw = gl.nondet.exec_prompt(prompt, response_format='json')
     item = raw if isinstance(raw, dict) else json.loads(raw)
     if not isinstance(item, dict) or set(item) != {'label', 'quote'}:
         raise gl.vm.UserError('Invalid model schema')
