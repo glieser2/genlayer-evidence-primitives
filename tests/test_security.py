@@ -500,3 +500,100 @@ def test_real_python_import_and_pytest_isolation(tmp_path):
     assert record['count'] == 1 and record['passed'] == 0
     assert 'ACTUAL_FAILURE' in record['results'][0]['stdout']
     assert 'SHADOW_MODULE_EXECUTED' not in completed.stdout + completed.stderr
+
+
+@pytest.mark.parametrize('target', ['source', 'rubric'])
+@pytest.mark.parametrize('separated', [False, True])
+def test_single_quote_evidence_protocol(direct_vm, direct_deploy, direct_alice, direct_bob, monkeypatch, target, separated):
+    """Exercise real leader/validator prompts with a bounded, deterministic evidence oracle.
+
+    This verifies protocol consistency and SDK state transitions, not real LLM semantics.
+    Both facts are in every body; only the distance changes quote availability.
+    """
+    first, second = 'Project supports feature Alpha.', 'Project supports feature Omega.'
+    statement = 'Project supports feature Alpha and feature Omega.'
+    body = first + (' Neutral filler.' * 50 if separated else ' ') + second
+    if separated:
+        assert body.index(second) + len(second) - body.index(first) > 500
+    direct_vm.sender = direct_alice
+    if target == 'source':
+        bodies = [body + ' Publisher ' + str(i) + '.' for i in range(2)]
+        sources = [{'url': URLS[i], 'sha256': sha(bodies[i])} for i in range(2)]
+        direct_vm.clear_mocks()
+        for url, document in zip(URLS, bodies):
+            direct_vm.mock_web(re.escape(url) + '$', {'status': 200, 'body': document})
+        c = direct_deploy('contracts/source_quorum.py', statement, json.dumps(sources), 2)
+        positive, item_key = 'SUPPORTS', 'assessments'
+    else:
+        blobs, run, jobs = rubric_data()
+        blobs['README.md'] = body
+        rubric_mocks(direct_vm, blobs, run, jobs)
+        from gltest.direct.sdk_loader import setup_sdk_paths
+        setup_sdk_paths(Path('contracts/rubric_milestone.py'))
+        from genlayer import Address as address
+        c = direct_deploy('contracts/rubric_milestone.py', address(direct_bob).as_hex, REPO,
+                         json.dumps([{'text': statement, 'path': 'README.md'}]),
+                         json.dumps({p: sha(blobs[p]) for p in POLICY_PATHS}))
+        direct_vm.sender = direct_bob
+        c.submit(SHA, RUN)
+        direct_vm.sender = direct_alice
+        positive, item_key = 'MET', 'checks'
+    from genlayer import gl
+    prompts = []
+
+    def bounded_evidence_oracle(prompt, **config):
+        assert config == {'response_format': 'json'}
+        prompts.append(prompt)
+        data = json.loads(prompt.split('\n')[-1])
+        validator = 'exactly one key, label' in prompt
+        document = data['evidence'] if validator else data.get('source', data.get('artifact'))
+        start, end = document.find(first), document.find(second)
+        full_support = start >= 0 and end >= 0
+        span = end + len(second) - start if full_support else 0
+        bounded = 'ONE contiguous exact quote of 10..500 characters' in prompt
+        # Without the shared rule the old leader and UNCLEAR verifier use full-body
+        # support, reproducing the unrepresentable-evidence failure, rather than
+        # returning a constant mocked label for this fixture.
+        supported = full_support and (not bounded or 10 <= span <= 500)
+        label = positive if supported else 'UNCLEAR'
+        if validator:
+            return {'label': label}
+        return {'label': label, 'quote': document[start:end + len(second)] if supported else ''}
+
+    monkeypatch.setattr(gl.nondet, 'exec_prompt', bounded_evidence_oracle)
+    c.evaluate()
+    assert direct_vm.run_validator() is True
+    report = proposal(c)
+    assert all(x['label'] == ('UNCLEAR' if separated else positive) for x in report[item_key])
+    assert json.loads(c.result())['status'] == ('NEEDS_EVIDENCE' if separated else 'REVIEW')
+    leader_prompts = [p for p in prompts if 'exactly one key, label' not in p]
+    assert leader_prompts and all('including ALL subconditions' in p and 'actual relevant checks' in p for p in leader_prompts)
+    if separated:
+        assert all('ONE contiguous exact quote of 10..500 characters' in p for p in prompts)
+        assert all(x['quote'] == '' for x in report[item_key])
+
+
+def test_rubric_invalid_utf8_is_reviewable(direct_vm, direct_deploy, direct_alice, direct_bob, monkeypatch):
+    rubric_mocks(direct_vm)
+    c = new_rubric(direct_vm, direct_deploy, direct_alice, direct_bob)
+    from genlayer import gl
+    original = gl.nondet.web.get
+
+    def web(url, **kwargs):
+        response = original(url, **kwargs)
+        if url.endswith('/README.md'):
+            return type(response)(status=200, headers={}, body=b'Invalid UTF-8: \xff')
+        return response
+
+    def no_semantic_call(*args, **kwargs):
+        raise AssertionError('Malformed text must be rejected before model assessment')
+
+    monkeypatch.setattr(gl.nondet.web, 'get', web)
+    monkeypatch.setattr(gl.nondet, 'exec_prompt', no_semantic_call)
+    c.evaluate()
+    assert direct_vm.run_validator() is True
+    state = json.loads(c.result())
+    assert state['report']['gate'] == {'status': 'REJECTED', 'reason': 'INVALID_UTF8'}
+    assert state['report']['decision'] == 'REJECTED' and state['attempt'] == 1
+    c.finalize(1, state['report']['digest'])
+    assert json.loads(c.result())['status'] == 'FINALIZED'
