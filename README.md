@@ -16,6 +16,8 @@ python -I -X utf8 scripts/run_tests.py
 python -I -X utf8 scripts/check_contracts.py
 ```
 
+Install the test dependencies with `python -I -m pip install -r requirements-test.txt`, then run the adversarial test suite with `python -I -X utf8 scripts/run_tests.py`.
+
 The runner uses the official SDK in Direct Mode, separate processes for each collected case, explicit pytest configuration and plugin, disabled automatic plugins, isolated Python imports, and a conftest boundary at tests/. It writes every subprocess output, exit code and source hash to evidence/local-tests.json. HTTP and LLM responses are mocked; Direct Mode is not a live consensus proof. The official SDK is pinned to GenVM v0.2.12; initial setup downloads its archive. Set GENLAYER_TEST_CACHE to select a cache. The in-memory Windows cleanup shim only handles deletion of an open temporary stdin file.
 
 GitHub Actions runs the same tests and GenVM checks on Linux. The verify job requires a successful Adversarial tests step. Actions use full commit pins, repository permission is read-only, and records are retained as an artifact for 90 days. Direct Python dependencies are version-pinned; transitive packages and hosted runners remain supply-chain assumptions.
