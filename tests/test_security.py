@@ -180,7 +180,8 @@ def new_rubric(vm, deploy, alice, bob):
     blobs, _, _ = rubric_data()
     policy = {p: sha(blobs[p]) for p in POLICY_PATHS}
     c = deploy('contracts/rubric_milestone.py', address(bob).as_hex, REPO,
-               json.dumps([{'text': 'The README gives a concrete command to run adversarial tests.', 'path': 'README.md'}]), json.dumps(policy))
+               json.dumps([{'text': 'The README gives a concrete command to run adversarial tests.', 'path': 'README.md',
+                            'required_quote_terms': [ARTIFACT]}]), json.dumps(policy))
     vm.sender = bob
     c.submit(SHA, RUN)
     vm.sender = alice
@@ -361,6 +362,9 @@ def test_citation_isolation(direct_vm, direct_deploy, direct_alice, direct_bob, 
 
     monkeypatch.setattr(gl.nondet, 'exec_prompt', independent)
     assert direct_vm.run_validator(leader_result=candidate) is (attack == 'label_only')
+    if target == 'rubric' and attack == 'insufficient':
+        assert stages == [], 'Noncanonical rubric quotes must fail before model calls'
+        return
     assert stages[0] == 'citation'
     if attack == 'insufficient':
         assert stages == ['citation'], 'Full context must never rescue an insufficient quote'
@@ -532,7 +536,7 @@ def test_single_quote_evidence_protocol(direct_vm, direct_deploy, direct_alice, 
         setup_sdk_paths(Path('contracts/rubric_milestone.py'))
         from genlayer import Address as address
         c = direct_deploy('contracts/rubric_milestone.py', address(direct_bob).as_hex, REPO,
-                         json.dumps([{'text': statement, 'path': 'README.md'}]),
+                         json.dumps([{'text': statement, 'path': 'README.md', 'required_quote_terms': [first, second]}]),
                          json.dumps({p: sha(blobs[p]) for p in POLICY_PATHS}))
         direct_vm.sender = direct_bob
         c.submit(SHA, RUN)
@@ -567,10 +571,15 @@ def test_single_quote_evidence_protocol(direct_vm, direct_deploy, direct_alice, 
     assert all(x['label'] == ('UNCLEAR' if separated else positive) for x in report[item_key])
     assert json.loads(c.result())['status'] == ('NEEDS_EVIDENCE' if separated else 'REVIEW')
     leader_prompts = [p for p in prompts if 'exactly one key, label' not in p]
-    assert leader_prompts and all('including ALL subconditions' in p and 'actual relevant checks' in p for p in leader_prompts)
-    if separated:
+    if target == 'source':
+        assert leader_prompts and all('including ALL subconditions' in p and 'actual relevant checks' in p for p in leader_prompts)
+    else:
+        assert leader_prompts == [], 'Rubric models must never generate quotations'
+    if separated and target == 'source':
         assert all('ONE contiguous exact quote of 10..500 characters' in p for p in prompts)
         assert all(x['quote'] == '' for x in report[item_key])
+    elif separated:
+        assert prompts == [], 'An overlong committed window is deterministically UNCLEAR'
 
 
 def test_rubric_invalid_utf8_is_reviewable(direct_vm, direct_deploy, direct_alice, direct_bob, monkeypatch):
@@ -597,3 +606,153 @@ def test_rubric_invalid_utf8_is_reviewable(direct_vm, direct_deploy, direct_alic
     assert state['report']['decision'] == 'REJECTED' and state['attempt'] == 1
     c.finalize(1, state['report']['digest'])
     assert json.loads(c.result())['status'] == 'FINALIZED'
+
+
+ANCHOR_FIRST = 'Install the test dependencies with `python -I -m pip install -r requirements-test.txt`'
+ANCHOR_LAST = 'then run the adversarial test suite with `python -I -X utf8 scripts/run_tests.py`.'
+ANCHOR_PARAGRAPH = ANCHOR_FIRST + ', ' + ANCHOR_LAST
+BARE_COMMANDS = 'python -I -m pip install -r requirements-test.txt\npython -I -X utf8 scripts/run_tests.py'
+
+
+def new_anchored_rubric(vm, deploy, alice, bob, body, terms):
+    blobs, run, jobs = rubric_data()
+    blobs['README.md'] = body
+    rubric_mocks(vm, blobs, run, jobs)
+    from gltest.direct.sdk_loader import setup_sdk_paths
+    setup_sdk_paths(Path('contracts/rubric_milestone.py'))
+    from genlayer import Address as address
+    vm.sender = alice
+    c = deploy('contracts/rubric_milestone.py', address(bob).as_hex, REPO,
+               json.dumps([{'text': 'The README provides concrete commands to install test dependencies and execute the adversarial tests.',
+                            'path': 'README.md', 'required_quote_terms': terms}]),
+               json.dumps({p: sha(blobs[p]) for p in POLICY_PATHS}))
+    vm.sender = bob
+    c.submit(SHA, RUN)
+    vm.sender = alice
+    return c
+
+
+@pytest.mark.parametrize('case', ['unique', 'duplicate', 'missing', 'limit500', 'limit501', 'repeat_limit', 'length9', 'length10', 'reverse_order', 'overlap'])
+def test_anchored_quote_boundaries(direct_vm, direct_deploy, direct_alice, direct_bob, monkeypatch, case):
+    terms = [ANCHOR_FIRST, ANCHOR_LAST]
+    body = BARE_COMMANDS + '\n\n' + ANCHOR_PARAGRAPH
+    expected = ANCHOR_PARAGRAPH
+    if case == 'duplicate':
+        body += '\n\n' + ANCHOR_PARAGRAPH
+        expected = ''
+    elif case == 'missing':
+        body, expected = ANCHOR_FIRST + '\n' + BARE_COMMANDS, ''
+    elif case in ('limit500', 'limit501'):
+        length = 500 if case == 'limit500' else 501
+        body = ANCHOR_FIRST + '.' * (length - len(ANCHOR_FIRST) - len(ANCHOR_LAST)) + ANCHOR_LAST
+        assert len(body) == length
+        expected = body if length == 500 else ''
+    elif case == 'repeat_limit':
+        body = (ANCHOR_FIRST + '\n') * 32 + ANCHOR_PARAGRAPH
+        expected = ''
+    elif case == 'reverse_order':
+        body, expected = ANCHOR_LAST + '\n' + ANCHOR_FIRST, ''
+    elif case == 'overlap':
+        terms, body, expected = ['abcdefghij', 'defghij'], 'abcdefghij', ''
+    elif case in ('length9', 'length10'):
+        terms = ['abc', 'xyz']
+        body = 'abc' + ' ' * (3 if case == 'length9' else 4) + 'xyz'
+        expected = body if case == 'length10' else ''
+    c = new_anchored_rubric(direct_vm, direct_deploy, direct_alice, direct_bob, body, terms)
+    from genlayer import gl
+    calls = []
+
+    def always_met(prompt, **config):
+        assert config == {'response_format': 'json'} and 'exactly one key, label' in prompt
+        payload = json.loads(prompt.split('\n')[-1])
+        assert set(payload) == {'criterion', 'evidence'}
+        if 'ONLY this citation' in prompt:
+            assert payload['evidence'] == expected
+        else:
+            assert payload['evidence'] == body
+        calls.append(prompt)
+        return {'label': 'MET'}
+
+    monkeypatch.setattr(gl.nondet, 'exec_prompt', always_met)
+    c.evaluate()
+    assert direct_vm.run_validator() is True
+    p = proposal(c)
+    item = p['checks'][0]
+    assert item['quote'] == expected
+    assert item['label'] == ('MET' if expected else 'UNCLEAR')
+    if expected:
+        assert item['start'] == body.index(expected) and len(calls) == 4
+    else:
+        assert item['start'] == 0 and calls == []
+        # Even universally affirmative models cannot approve missing/ambiguous anchors.
+        item.update(label='MET', quote=body[:30], start=0)
+        p['decision'] = 'APPROVED'
+        assert direct_vm.run_validator(leader_result=p) is False
+        assert calls == []
+
+
+@pytest.mark.parametrize('attack', ['bare_commands', 'expanded', 'alternative_window'])
+def test_anchored_quote_rejects_noncanonical(direct_vm, direct_deploy, direct_alice, direct_bob, monkeypatch, attack):
+    body = BARE_COMMANDS + '\n\n' + ANCHOR_PARAGRAPH
+    alternative = ANCHOR_FIRST + ', after preparing your shell, ' + ANCHOR_LAST
+    if attack == 'alternative_window':
+        body += '\n\n' + alternative
+    c = new_anchored_rubric(direct_vm, direct_deploy, direct_alice, direct_bob, body, [ANCHOR_FIRST, ANCHOR_LAST])
+    from genlayer import gl
+    calls = []
+
+    def always_met(prompt, **config):
+        calls.append(prompt)
+        return {'label': 'MET'}
+
+    monkeypatch.setattr(gl.nondet, 'exec_prompt', always_met)
+    c.evaluate()
+    assert direct_vm.run_validator() is True
+    p = proposal(c)
+    assert p['checks'][0]['quote'] == ANCHOR_PARAGRAPH
+    quote = BARE_COMMANDS if attack == 'bare_commands' else (body if attack == 'expanded' else alternative)
+    assert quote in body and 10 <= len(quote) <= 500
+    p['checks'][0].update(quote=quote, start=body.index(quote))
+    before = len(calls)
+    assert direct_vm.run_validator(leader_result=p) is False
+    assert len(calls) == before, 'Deterministic quote rejection must precede model calls'
+
+
+@pytest.mark.parametrize('case', ['citation_unclear', 'context_veto', 'extra_schema'])
+def test_anchored_quote_keeps_semantic_checks(direct_vm, direct_deploy, direct_alice, direct_bob, monkeypatch, case):
+    c = new_anchored_rubric(direct_vm, direct_deploy, direct_alice, direct_bob, ANCHOR_PARAGRAPH, [ANCHOR_FIRST, ANCHOR_LAST])
+    from genlayer import gl
+
+    def assess(prompt, **config):
+        citation = 'ONLY this citation' in prompt
+        if case == 'extra_schema':
+            return {'label': 'MET', 'quote': ANCHOR_PARAGRAPH}
+        return {'label': 'UNCLEAR' if (case == 'citation_unclear' and citation) or (case == 'context_veto' and not citation) else 'MET'}
+
+    monkeypatch.setattr(gl.nondet, 'exec_prompt', assess)
+    if case == 'extra_schema':
+        with pytest.raises(sdk()[1], match='Invalid validator schema'):
+            c.evaluate()
+    else:
+        c.evaluate()
+        assert direct_vm.run_validator() is True
+        assert json.loads(c.result())['status'] == 'NEEDS_EVIDENCE'
+        assert proposal(c)['checks'][0]['quote'] == ''
+
+
+@pytest.mark.parametrize('terms', [[], ['same phrase', 'same phrase'], 'not a list', [True], ['ab'], ['x' * 201], ['term ' + str(i) for i in range(9)]])
+def test_anchored_quote_configuration_rejects_invalid(direct_vm, direct_deploy, direct_alice, direct_bob, terms):
+    with pytest.raises(Exception, match='Invalid required quote terms'):
+        new_anchored_rubric(direct_vm, direct_deploy, direct_alice, direct_bob, ANCHOR_PARAGRAPH, terms)
+
+
+def test_anchored_quote_configuration_requires_anchors(direct_vm, direct_deploy, direct_alice, direct_bob):
+    from gltest.direct.sdk_loader import setup_sdk_paths
+    setup_sdk_paths(Path('contracts/rubric_milestone.py'))
+    from genlayer import Address as address
+    direct_vm.sender = direct_alice
+    blobs, _, _ = rubric_data()
+    with pytest.raises(Exception, match='Invalid criterion schema'):
+        direct_deploy('contracts/rubric_milestone.py', address(direct_bob).as_hex, REPO,
+                      json.dumps([{'text': 'Run adversarial tests.', 'path': 'README.md'}]),
+                      json.dumps({p: sha(blobs[p]) for p in POLICY_PATHS}))
