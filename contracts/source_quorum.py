@@ -87,6 +87,12 @@ def verify_label(statement: str, body: str, citation: str, expected: str) -> boo
 
 
 def decision(items: list, quorum: int) -> str:
+    # An invalid commitment is not evidence against the claim. It only makes
+    # this configured evidence set unusable when even recovered transient
+    # sources could no longer form a distinct-content quorum.
+    possible = {x['sha256'] for x in items if x['error'] in ('', 'HTTP_UNAVAILABLE', 'FETCH_ERROR')}
+    if len(possible) < quorum:
+        return 'EVIDENCE_INVALID'
     seen, labels = [], []
     for x in items:
         if x['label'] != 'UNAVAILABLE' and x['sha256'] not in seen:
@@ -103,14 +109,19 @@ def decision(items: list, quorum: int) -> str:
 def fetch(source: dict) -> tuple:
     try:
         response = gl.nondet.web.get(source['url'])
-        if response.status != 200:
+        if response.status in (403, 408, 429) or response.status >= 500:
             return '', 'HTTP_UNAVAILABLE'
+        if response.status != 200:
+            return '', 'HTTP_NOT_FOUND' if response.status in (404, 410) else 'HTTP_REJECTED'
         data = response.body
         if not isinstance(data, bytes) or not 10 <= len(data) <= 64000:
             return '', 'INVALID_SIZE'
         if hashlib.sha256(data).hexdigest() != source['sha256']:
             return '', 'HASH_MISMATCH'
-        return data.decode('utf-8'), ''
+        try:
+            return data.decode('utf-8'), ''
+        except UnicodeError:
+            return '', 'INVALID_UTF8'
     except Exception:
         return '', 'FETCH_ERROR'
 
@@ -251,6 +262,7 @@ class SourceQuorum(gl.Contract):
     @gl.public.view
     def result(self) -> str:
         return json.dumps({'version': 3, 'policy': 'publisher-registry-v1', 'claim': self.claim,
+                           'failure_policy': 'source-failure-v2',
                            'sources': json.loads(self.sources_json), 'quorum': int(self.quorum),
                            'status': self.status, 'revision': int(self.revision), 'report': json.loads(self.report_json)})
 
