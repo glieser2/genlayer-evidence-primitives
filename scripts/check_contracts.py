@@ -1,4 +1,7 @@
-"""Run the official linter against exactly the SDK used by the tests."""
+"""Run official linter check, including its built-in Validation output.
+
+This does not invoke a separate ABI checker.
+"""
 import sys
 if not sys.flags.isolated:
     raise SystemExit('Run with python -I scripts/check_contracts.py')
