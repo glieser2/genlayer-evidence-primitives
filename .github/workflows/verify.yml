@@ -19,7 +19,7 @@ jobs:
         run: python -I -m pip install -r requirements-test.txt
       - name: Adversarial tests
         run: python -I scripts/run_tests.py --output evidence/ci-tests.json
-      - name: GenVM lint and ABI validation
+      - name: GenVM linter check (includes built-in Validation)
         run: python -I scripts/check_contracts.py
       - name: Preserve verification records
         if: always()
