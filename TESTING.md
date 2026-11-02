@@ -1,3 +1,11 @@
+# Independent-review repair candidate: source-failure-v2
+
+This candidate changes SourceQuorum, the test suite, the check-script description and the CI step label. The previous 117-case result belongs to commit 298d4f077b378a6886d399b301426979b0609bc0 and does not test this SourceQuorum change. The repair completed 132/132 local SDK Direct Mode tests, and both contracts passed linter check including built-in Validation. Full outputs are stored separately in evidence/review-fixes-tests.json and evidence/lint.txt. New public CI is blocked until specific publication approval; no new live verification is claimed. The check invokes genvm-linter check, including its built-in Validation output; there is no separate ABI checker.
+
+New regression coverage: reviewable/finalizable HTTP 404/410/400, hash mismatch, invalid size and UTF-8; transient HTTP status counters; remaining valid quorum; recoverable potential quorum. Rubric behavior is unchanged. The frozen baseline, later document commit and archive provenance must be kept distinct.
+
+## Historical verification records (unchanged source identities)
+
 # v3.1 / Rubric v3.2 verification record
 
 Historical v3.1 official SDK Direct Mode local verification passed 93/93 tests; both contracts passed GenVM lint and ABI validation. The tests mock HTTP and LLM responses, so they are not live consensus evidence. The earlier v3.1 initial local run had 91 passes and two fixture initialization failures; the fixtures were corrected before the final 93/93 run. Current v3.2 results are recorded below.

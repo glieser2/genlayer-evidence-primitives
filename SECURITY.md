@@ -1,5 +1,17 @@
 # v3 / v3.1 / Rubric v3.2 security review
 
+## Independent-review repairs (2026-11-02)
+
+M-01: SourceQuorum now classifies missing/rejected HTTP responses, hash mismatch, invalid size and invalid UTF-8 separately from transient network/403/408/429/5xx failures. If even recovered transient sources cannot provide a distinct-content quorum, EVIDENCE_INVALID is a reviewable and finalizable evidence-set failure. It is not a contradiction of the claim. Valid remaining quorum may still decide the claim, while every unavailable source remains visible. A partial transient outage that could restore quorum remains retryable. The new result failure_policy is source-failure-v2; the old v3.1 deployment does not verify this implementation.
+
+M-02: Rubric authorization in SUBMITTED binds client identity and revision; expected_digest is empty because no report exists. NEEDS_EVIDENCE/REVIEW additionally bind the nonempty report digest. The contract behavior is unchanged; no stronger empty-stage digest guarantee is claimed.
+
+L-01/L-04: historical code and later document commits are separate provenance. Mixed delivery bundles must declare their code, documentation and evidence sources and per-file hashes, rather than claiming to be a pure fixed-commit export.
+
+L-02: the check script invokes genvm-linter check with its built-in Validation; it is not a separate ABI checker. Historical "ABI validation" labels describe this same invocation, not another tool.
+
+L-03: single-anchor repetition deliberately yields ambiguous shortest windows. Clients must preflight the committed phrases, order, nonoverlap, occurrence counts and 10..500-character bound. The ambiguity rule is retained, not relaxed.
+
 ## Repairs and adversarial evidence
 
 | Reproduced v2 defect | v3 control | Regression |
@@ -24,7 +36,7 @@ The policy is deliberately narrow: complete trees are limited to 200 entries and
 
 Two-stage citation prompts prevent full-source leakage into the sufficiency stage. They do not mathematically prove semantic sufficiency, factual truth, or resistance to every prompt injection. Label-only verifier schema intentionally rejects extra model fields. Real models can still disagree or emit invalid output, causing an evaluation to fail without approval. These contracts hold no funds and are unsuitable for unattended high-stakes decisions.
 
-The v3.1 live Rubric revision 2 is a concrete P2 evidence-integrity counterexample to relying on semantic prompts to enforce every required citation condition: its APPROVED report quotes only two commands, not their adversarial-test purpose. The underlying README does contain the necessary information; this finding concerns the accepted citation, not a claim that the delivery failed the criterion. The instance was left in REVIEW. The preserved record is evidence/rubric-v31-rev2-live-report.json. v3.2 replaces free quotation entirely for Rubric; missing required_quote_terms is a constructor error. Its deterministic guarantee is exact inclusion of the client's precommitted phrases in one canonical ordered window. Terms are not a semantic proof, and poor anchor choices or model errors remain possible. The client must review full phrases before deployment; model checks still evaluate the citation and full-context qualifications independently. SourceQuorum v3.1 code and its separately confirmed live result are unchanged.
+The v3.1 live Rubric revision 2 is a concrete P2 evidence-integrity counterexample to relying on semantic prompts to enforce every required citation condition: its APPROVED report quotes only two commands, not their adversarial-test purpose. The underlying README does contain the necessary information; this finding concerns the accepted citation, not a claim that the delivery failed the criterion. The instance was left in REVIEW. The preserved record is evidence/rubric-v31-rev2-live-report.json. v3.2 replaces free quotation entirely for Rubric; missing required_quote_terms is a constructor error. Its deterministic guarantee is exact inclusion of the client's precommitted phrases in one canonical ordered window. Terms are not a semantic proof, and poor anchor choices or model errors remain possible. The client must review full phrases before deployment; model checks still evaluate the citation and full-context qualifications independently. At the v3.2 release SourceQuorum v3.1 was kept byte-identical. The current source-failure-v2 candidate is a subsequent change; its verification must be recorded separately.
 
 Anchor selection accepts only a unique shortest ordered, nonoverlapping window of 10..500 characters. More than 32 occurrences of any of the at most eight phrases, a missing phrase, an impossible order, overlap, or a tied shortest window yields UNCLEAR deterministically. During targeted testing, an unordered prototype could select a cross-paragraph reversed window; the ordered algorithm fixes that case, and the initial test log is retained. Existing Rubric candidate-tampering, CI, retry and lifecycle tests now all use mandatory anchors. Boundary tests and universally affirmative model mocks demonstrate that omitted or alternate quotes are rejected without consulting an LLM. They do not establish universal semantic accuracy or live consensus success.
 

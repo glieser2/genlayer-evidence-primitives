@@ -1,3 +1,9 @@
+# Independent-review repair candidate: live status
+
+The source-failure-v2 candidate has not yet been published or deployed. Existing SourceQuorum v3.1 and RubricMilestone v3.2 deployments remain historical, immutable evidence for their own source hashes. They do not verify this SourceQuorum repair. Portal submissions remain paused. A new deployment is required to demonstrate the changed failure policy on Studio; no such success is claimed here.
+
+## Historical finalized deployments and disclosure
+
 # Final verification: SourceQuorum v3.1 / RubricMilestone v3.2
 
 Current confirmed application results: **SourceQuorum FINALIZED / SUPPORTED** and **RubricMilestone v3.2 FINALIZED / APPROVED**. The current release code commit `298d4f077b378a6886d399b301426979b0609bc0` passed 117/117 public CI cases and both lint/ABI checks. Earlier versions and unsuccessful or unfinalized reviews below are retained as history, not current success claims. Portal submissions remain paused.
