@@ -1,7 +1,7 @@
-# v3 verification record
+# v3.1 verification record
 
-Date: 2026-11-02 (Asia/Shanghai). See evidence/local-tests.json for exact measured count, timestamps, outputs and source hashes. The official GenVM v0.2.12 SDK, genlayer-test 0.29.2, genvm-linter 0.11.0 and Python 3.13 are used. Each test runs in a fresh SDK process. Web and LLM are mocked; validator callbacks are explicitly exercised. A separate real CPython subprocess test verifies that malicious sibling imports, root conftest and environment/config injection cannot convert an actual failing test into success.
+The official SDK Direct Mode local run passed 93/93 tests; both contracts passed GenVM lint and ABI validation. The tests mock HTTP and LLM responses, so they are not live consensus evidence. The earlier v3.1 initial local run had 91 passes and two fixture initialization failures; the fixtures were corrected before the final 93/93 run.
 
-Run the exact README commands. Both contracts must pass GenVM lint and ABI checks. Clean Linux GitHub Actions and real Studio consensus are separate verification gates, recorded in LIVE_VERIFICATION.md when completed. v2's 64-case CI run and old deployments do not verify v3.
+Public Linux CI passed 93/93 tests, lint and ABI checks on [commit 1e7a0a2763f0c46781d8094a6db7a859b886e181, run 41358111627, job 125002446893](https://github.com/glieser2/genlayer-evidence-primitives/actions/runs/41358111627/job/125002446893), attempt 1. The prior v3.1 code commit dda9c8ff7de76732a689c3fea5c7bdfde73e83d3 also passed 93/93 on run 41357020896. The later commit clarifies README commands; all ten policy-pinned blobs are unchanged. v3's 88-case run and v2 records are historical, not evidence of the new sources.
 
-Gemini's earlier review used a substitute harness because its environment could not run the official SDK. Selected findings were subsequently reproduced locally against v2 using the SDK and a real Python import attack. Those original defect probes remain historical evidence, not v3 success criteria. The new tests assert corrected behavior.
+Live consensus observations and limitations are in LIVE_VERIFICATION.md. Passing finite tests does not establish universal correctness or resistance to all prompt injection.
