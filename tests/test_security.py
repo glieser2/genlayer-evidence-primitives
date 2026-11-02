@@ -118,8 +118,107 @@ def test_source_content_change(direct_vm, direct_deploy):
     direct_vm.mock_web(r'.*', {'status': 200, 'body': 'Changed document, forged after the commitment.'})
     assert direct_vm.run_validator(leader_result=p) is False
     c.evaluate()
-    assert json.loads(c.result())['status'] == 'NEEDS_EVIDENCE'
+    assert direct_vm.run_validator() is True
+    assert json.loads(c.result())['status'] == 'REVIEW'
+    assert proposal(c)['decision'] == 'EVIDENCE_INVALID'
     assert all(x['error'] == 'HASH_MISMATCH' for x in proposal(c)['assessments'])
+
+
+@pytest.mark.parametrize('kind,error', [('404', 'HTTP_NOT_FOUND'), ('410', 'HTTP_NOT_FOUND'),
+    ('400', 'HTTP_REJECTED'), ('hash', 'HASH_MISMATCH'), ('small', 'INVALID_SIZE'),
+    ('large', 'INVALID_SIZE'), ('utf8', 'INVALID_UTF8')])
+def test_source_permanent_evidence_failure_is_reviewable(direct_vm, direct_deploy, monkeypatch, kind, error):
+    committed = [x.encode() for x in BODIES[:2]]
+    bodies = list(committed)
+    if kind == 'utf8':
+        committed = bodies = [b'Invalid UTF-8 publisher ' + str(i).encode() + b': \xff' for i in range(2)]
+    elif kind == 'small':
+        committed = bodies = [str(i).encode() for i in range(2)]
+    elif kind == 'large':
+        committed = bodies = [b'x' * 64001 + str(i).encode() for i in range(2)]
+    elif kind == 'hash':
+        bodies = [b'Changed source publisher ' + str(i).encode() for i in range(2)]
+    source_mocks(direct_vm)
+    c = direct_deploy('contracts/source_quorum.py', TEXT,
+        json.dumps([{'url': URLS[i], 'sha256': sha(committed[i])} for i in range(2)]), 2)
+    from genlayer import gl
+    original = gl.nondet.web.get
+
+    def web(url, **kwargs):
+        response = original(url, **kwargs)
+        return type(response)(status=int(kind) if kind.isdigit() else 200,
+                              headers={}, body=bodies[URLS.index(url)])
+
+    def no_model(*args, **kwargs):
+        raise AssertionError('Invalid committed evidence must not reach the model')
+
+    monkeypatch.setattr(gl.nondet.web, 'get', web)
+    monkeypatch.setattr(gl.nondet, 'exec_prompt', no_model)
+    c.evaluate()
+    assert direct_vm.run_validator() is True
+    state = json.loads(c.result())
+    assert state['status'] == 'REVIEW' and state['revision'] == 1
+    assert state['failure_policy'] == 'source-failure-v2'
+    assert state['report']['decision'] == 'EVIDENCE_INVALID'
+    assert all(x['error'] == error and x['label'] == 'UNAVAILABLE' for x in state['report']['assessments'])
+    forged = proposal(c)
+    forged['decision'] = 'SUPPORTED'
+    assert direct_vm.run_validator(leader_result=forged) is False
+    c.finalize(1, state['report']['digest'])
+    assert json.loads(c.result())['status'] == 'FINALIZED'
+
+
+@pytest.mark.parametrize('status', [403, 408, 429, 500, 503])
+def test_source_transient_status_preserves_revision(direct_vm, direct_deploy, status):
+    c = new_source(direct_deploy)
+    direct_vm.mock_web(r'.*', {'status': status, 'body': 'Temporarily unavailable'})
+    with pytest.raises(sdk()[1], match='without consuming revision'):
+        c.evaluate()
+    assert direct_vm.run_validator() is True
+    assert json.loads(c.result())['revision'] == 0
+    assert json.loads(c.history()) == []
+
+
+@pytest.mark.parametrize('bad_status,expected', [(404, 'SUPPORTED'), (503, 'SUPPORTED')])
+def test_source_remaining_valid_quorum_survives_failure(direct_vm, direct_deploy, monkeypatch, bad_status, expected):
+    source_mocks(direct_vm, n=3)
+    c = new_source(direct_deploy, n=3)
+    from genlayer import gl
+    original = gl.nondet.web.get
+
+    def web(url, **kwargs):
+        response = original(url, **kwargs)
+        if url == URLS[2]:
+            return type(response)(status=bad_status, headers={}, body=b'Unavailable source')
+        return response
+
+    monkeypatch.setattr(gl.nondet.web, 'get', web)
+    c.evaluate()
+    assert direct_vm.run_validator() is True
+    assert proposal(c)['decision'] == expected
+    assert proposal(c)['assessments'][2]['label'] == 'UNAVAILABLE'
+    assert proposal(c)['assessments'][2]['error'] == ('HTTP_NOT_FOUND' if bad_status == 404 else 'HTTP_UNAVAILABLE')
+
+
+def test_source_potential_quorum_counts_recoverable_sources(direct_vm, direct_deploy, monkeypatch):
+    source_mocks(direct_vm, n=3)
+    c = new_source(direct_deploy, n=3)
+    from genlayer import gl
+    original = gl.nondet.web.get
+
+    def web(url, **kwargs):
+        response = original(url, **kwargs)
+        if url == URLS[1]:
+            return type(response)(status=404, headers={}, body=b'Not found')
+        if url == URLS[2]:
+            return type(response)(status=503, headers={}, body=b'Try later')
+        return response
+
+    monkeypatch.setattr(gl.nondet.web, 'get', web)
+    c.evaluate()
+    assert direct_vm.run_validator() is True
+    assert proposal(c)['decision'] == 'INCONCLUSIVE'
+    assert json.loads(c.result())['status'] == 'NEEDS_EVIDENCE'
 
 
 def test_source_retry_and_stale_finalization(direct_vm, direct_deploy, direct_alice, direct_charlie):
